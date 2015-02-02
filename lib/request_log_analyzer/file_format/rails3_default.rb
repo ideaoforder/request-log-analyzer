@@ -3,7 +3,7 @@ module RequestLogAnalyzer::FileFormat
   #
   # For now, this is just a basic implementation. It will probaby change after
   # Rails 3 final has been released.
-  class Rails3 < Base
+  class Rails3Default < Base
     extend CommonRegularExpressions
 
     # beta4: Started GET "/" for 127.0.0.1 at Wed Jul 07 09:13:27 -0700 2010 (different time format)
