@@ -1,44 +1,52 @@
 module RequestLogAnalyzer::FileFormat
-  # Lograge FileFormat class for Rails 3 logs.
-
-
-# DEFAULT RAILS
-# Started GET "/" for 127.0.0.1 at 2012-03-10 14:28:14 +0100
-# Processing by HomeController#index as HTML
-#   Rendered text template within layouts/application (0.0ms)
-#   Rendered layouts/_assets.html.erb (2.0ms)
-#   Rendered layouts/_top.html.erb (2.6ms)
-#   Rendered layouts/_about.html.erb (0.3ms)
-#   Rendered layouts/_google_analytics.html.erb (0.4ms)
-# Completed 200 OK in 79ms (Views: 78.8ms | ActiveRecord: 0.0ms)
-
-# LOGRAGE
-# method=GET path=/items/203341/edit format=html controller=items action=edit status=200 duration=2205.17 view=1210.69 db=173.89 time=2015-02-02 13:33:08 -0500 params={"id"=>"203341"} host=localhost source=Whiplash
-
-
+  # Default FileFormat class for Rails 3 logs.
+  #
+  # For now, this is just a basic implementation. It will probaby change after
+  # Rails 3 final has been released.
   class Rails3 < Base
     extend CommonRegularExpressions
 
     # beta4: Started GET "/" for 127.0.0.1 at Wed Jul 07 09:13:27 -0700 2010 (different time format)
-    line_definition :log_line do |line|
-      line.regexp = /method=([A-Z]+) path=(\S*) format=(\w+) controller=(\w+) action=(\w+) status=(\d+) duration=([0-9\.]*) view=([0-9\.]*) db=([0-9\.]*) time=(#{timestamp('%a %b %d %H:%M:%S %z %Y')}|#{timestamp('%Y-%m-%d %H:%M:%S %z')}) params=(\{.*\}) host=(\S*) source=(\S*)/
+    line_definition :started do |line|
+      line.header = true
+      line.teaser = /Started /
+      line.regexp = /Started ([A-Z]+) "([^"]+)" for (#{ip_address}) at (#{timestamp('%a %b %d %H:%M:%S %z %Y')}|#{timestamp('%Y-%m-%d %H:%M:%S %z')})/
 
       line.capture(:method)
       line.capture(:path)
-      line.capture(:format)
+      line.capture(:ip)
+      line.capture(:timestamp).as(:timestamp)
+    end
+
+    # Processing by QueriesController#index as HTML
+    line_definition :processing do |line|
+      line.teaser = /Processing by /
+      line.regexp = /Processing by ([A-Za-z0-9\-:]+)\#(\w+) as ([\w\/\*]*)/
+
       line.capture(:controller)
       line.capture(:action)
+      line.capture(:format)
+    end
+
+    # Parameters: {"action"=>"cached", "controller"=>"cached"}
+    line_definition :parameters do |line|
+      line.teaser = /\bParameters:/
+      line.regexp = /\bParameters:\s+(\{.*\})/
+      line.capture(:params).as(:eval)
+    end
+
+    # Completed 200 OK in 224ms (Views: 200.2ms | ActiveRecord: 3.4ms)
+    # Completed 302 Found in 23ms
+    # Completed in 189ms
+    line_definition :completed do |line|
+      line.footer = true
+      line.teaser = /Completed /
+      line.regexp = /Completed (\d+)? .*in (\d+(?:\.\d+)?)ms(?:[^\(]*\(Views: (\d+(?:\.\d+)?)ms .* ActiveRecord: (\d+(?:\.\d+)?)ms.*\))?/
 
       line.capture(:status).as(:integer)
       line.capture(:duration).as(:duration, unit: :msec)
       line.capture(:view).as(:duration, unit: :msec)
       line.capture(:db).as(:duration, unit: :msec)
-
-      line.capture(:timestamp).as(:timestamp)
-      line.capture(:params).as(:eval)
-
-      line.capture(:host)
-      line.capture(:source)
     end
 
     # ActionController::RoutingError (No route matches [GET] "/missing_stuff"):
@@ -59,6 +67,20 @@ module RequestLogAnalyzer::FileFormat
       line.capture(:line).as(:integer)
       line.capture(:file)
     end
+
+    # Rendered queries/index.html.erb (0.6ms)
+    line_definition :rendered do |line|
+      line.compound = [:partial_duration]
+      line.teaser = /\bRendered /
+      line.regexp = /\bRendered ([a-zA-Z0-9_\-\/.]+(?:\/[a-zA-Z0-9_\-.]+)+)(?:\ within\ .*?)? \((\d+(?:\.\d+)?)ms\)/
+      line.capture(:rendered_file)
+      line.capture(:partial_duration).as(:duration, unit: :msec)
+    end
+
+    # # Not parsed at the moment:
+    # SQL (0.2ms) SET SQL_AUTO_IS_NULL=0
+    # Query Load (0.4ms) SELECT `queries`.* FROM `queries`
+    # Rendered collection (0.0ms)
 
     REQUEST_CATEGORIZER = lambda { |request| "#{request[:controller]}##{request[:action]}.#{request[:format]}" }
 
